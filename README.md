@@ -40,16 +40,10 @@ This repo hosts a kubernetes operator that is responsible for creating and manag
 
 **Deploying operator locally**
 
-- Define operator namespace
-
-  ```commandline
-  export OPERATOR_NAMESPACE=<namespace-to-install-operator>
-  ```
-
 - Deploy the created image in your cluster using following command:
 
   ```commandline
-  make deploy IMG=quay.io/<username>/llama-stack-k8s-operator:<custom-tag> OPERATOR_NAMESPACE=<namespace-to-install-operator>
+  make deploy IMG=quay.io/<username>/llama-stack-k8s-operator:<custom-tag> 
   ```
 
 - To remove resources created during installation use:
