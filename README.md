@@ -10,7 +10,7 @@ This repo hosts a kubernetes operator that is responsible for creating and manag
 - [Deploying Llama Stack Server](#deploying-the-llama-stack-server)
  
 
-  ## Developer Guide
+## Developer Guide
 
 #### Pre-requisites
 
