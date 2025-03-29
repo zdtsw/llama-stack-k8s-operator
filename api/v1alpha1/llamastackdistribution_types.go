@@ -39,9 +39,9 @@ type LlamaStackDistributionSpec struct {
 // ServerSpec defines the desired state of llama server.
 type ServerSpec struct {
 	// +kubebuilder:default:="ollama-distro"
-	Distribution  string        `json:"distribution"`
-	ContainerSpec ContainerSpec `json:"containerSpec"`
-	PodOverrides  *PodOverrides `json:"podOverrides,omitempty"` // Optional pod-level overrides
+	Distribution  DistributionType `json:"distribution"`
+	ContainerSpec ContainerSpec    `json:"containerSpec"`
+	PodOverrides  *PodOverrides    `json:"podOverrides,omitempty"` // Optional pod-level overrides
 }
 
 // ContainerSpec defines the llama-stack server container configuration.
@@ -59,10 +59,23 @@ type PodOverrides struct {
 	VolumeMounts []corev1.VolumeMount `json:"volumeMounts,omitempty"`
 }
 
+// ProviderInfo represents a single provider from the providers endpoint.
+type ProviderInfo struct {
+	API          string `json:"api"`
+	ProviderID   string `json:"provider_id"`
+	ProviderType string `json:"provider_type"`
+}
+
+// DistributionConfig represents the configuration information from the providers endpoint.
+type DistributionConfig struct {
+	Providers []ProviderInfo `json:"providers,omitempty"`
+}
+
 // LlamaStackDistributionStatus defines the observed state of LlamaStackDistribution.
 type LlamaStackDistributionStatus struct {
-	Version string `json:"image,omitempty"`
-	Ready   bool   `json:"ready"`
+	Version            string             `json:"version,omitempty"`
+	DistributionConfig DistributionConfig `json:"distributionConfig,omitempty"`
+	Ready              bool               `json:"ready"`
 }
 
 //+kubebuilder:object:root=true
