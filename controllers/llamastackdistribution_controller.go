@@ -19,11 +19,11 @@ package controllers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -31,7 +31,7 @@ import (
 	"github.com/meta-llama/llama-stack-k8s-operator/pkg/deploy"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -50,10 +50,7 @@ const (
 )
 
 // Define a map that translates user-friendly names to actual image references.
-var imageMap = map[llamav1alpha1.DistributionType]string{
-	llamav1alpha1.Ollamadistribution: os.Getenv("OLLAMA_IMAGE"),
-	llamav1alpha1.Vllmdistribution:   os.Getenv("VLLM_IMAGE"),
-}
+var imageMap = llamav1alpha1.ImageMap
 
 // LlamaStackDistributionReconciler reconciles a LlamaStack object.
 type LlamaStackDistributionReconciler struct {
@@ -76,7 +73,7 @@ func (r *LlamaStackDistributionReconciler) Reconcile(ctx context.Context, req ct
 	// Fetch the LlamaStack instance
 	instance := &llamav1alpha1.LlamaStackDistribution{}
 	if err := r.Get(ctx, req.NamespacedName, instance); err != nil {
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			r.Log.Info("failed to find LlamaStackDistribution resource")
 			return ctrl.Result{}, nil
 		}
@@ -116,9 +113,24 @@ func (r *LlamaStackDistributionReconciler) SetupWithManager(mgr ctrl.Manager) er
 // reconcileDeployment manages the Deployment for the LlamaStack server.
 func (r *LlamaStackDistributionReconciler) reconcileDeployment(ctx context.Context, instance *llamav1alpha1.LlamaStackDistribution) error {
 	logger := log.FromContext(ctx)
-	resolvedImage := imageMap[instance.Spec.Server.Distribution]
-	if resolvedImage == "" {
-		return fmt.Errorf("failded to validate distribution type: %s", instance.Spec.Server.Distribution)
+
+	// Validate that only one of name or image is set
+	if instance.Spec.Server.Distribution.Name != "" && instance.Spec.Server.Distribution.Image != "" {
+		return errors.New("only one of distribution.name or distribution.image can be set")
+	}
+
+	// Get the image either from the map or direct reference
+	var resolvedImage string
+	switch {
+	case instance.Spec.Server.Distribution.Name != "":
+		resolvedImage = imageMap[instance.Spec.Server.Distribution.Name]
+		if resolvedImage == "" {
+			return fmt.Errorf("failed to validate distribution name: %s", instance.Spec.Server.Distribution.Name)
+		}
+	case instance.Spec.Server.Distribution.Image != "":
+		resolvedImage = instance.Spec.Server.Distribution.Image
+	default:
+		return errors.New("failed to validate distribution: either distribution.name or distribution.image must be set")
 	}
 
 	// Build the container spec
@@ -276,7 +288,7 @@ func (r *LlamaStackDistributionReconciler) getProviderInfo(ctx context.Context, 
 func (r *LlamaStackDistributionReconciler) updateStatus(ctx context.Context, instance *llamav1alpha1.LlamaStackDistribution) error {
 	deployment := &appsv1.Deployment{}
 	err := r.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, deployment)
-	if err != nil && !errors.IsNotFound(err) {
+	if err != nil && !k8serrors.IsNotFound(err) {
 		return fmt.Errorf("failed to fetch deployment for status: %w", err)
 	}
 

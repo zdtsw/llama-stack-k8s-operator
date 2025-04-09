@@ -205,9 +205,20 @@ spec:
                         type: object
                     type: object
                   distribution:
-                    default: ollama-distro
-                    description: enum to define supported distribution types in llama-stack.
-                    type: string
+                    default:
+                      name: ollama
+                    description: DistributionType defines the distribution configuration
+                      for llama-stack.
+                    properties:
+                      image:
+                        description: Image is the direct container image reference
+                          to use
+                        type: string
+                      name:
+                        description: Name is the distribution name that maps to a
+                          predefined image in imageMap
+                        type: string
+                    type: object
                   podOverrides:
                     description: PodOverrides allows advanced pod-level customization.
                     properties:

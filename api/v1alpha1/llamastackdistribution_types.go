@@ -21,13 +21,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const (
-	Ollamadistribution DistributionType = "ollama-distro"
-	Vllmdistribution   DistributionType = "vllm-distro"
-)
-
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// DistributionType defines the distribution configuration for llama-stack.
+type DistributionType struct {
+	// Name is the distribution name that maps to a predefined image in imageMap
+	// +optional
+	Name string `json:"name,omitempty"`
+	// Image is the direct container image reference to use
+	// +optional
+	Image string `json:"image,omitempty"`
+}
 
 // LlamaStackDistributionSpec defines the desired state of LlamaStackDistribution.
 type LlamaStackDistributionSpec struct {
@@ -38,7 +40,7 @@ type LlamaStackDistributionSpec struct {
 
 // ServerSpec defines the desired state of llama server.
 type ServerSpec struct {
-	// +kubebuilder:default:="ollama-distro"
+	// +kubebuilder:default:={"name": "ollama"}
 	Distribution  DistributionType `json:"distribution"`
 	ContainerSpec ContainerSpec    `json:"containerSpec"`
 	PodOverrides  *PodOverrides    `json:"podOverrides,omitempty"` // Optional pod-level overrides
@@ -106,9 +108,6 @@ func init() { //nolint:gochecknoinits
 }
 
 // HasPorts checks if the container spec defines a port.
-func (l *LlamaStackDistribution) HasPorts() bool {
-	return l.Spec.Server.ContainerSpec.Port != 0 || len(l.Spec.Server.ContainerSpec.Env) > 0 // Port or env implies service need
+func (r *LlamaStackDistribution) HasPorts() bool {
+	return r.Spec.Server.ContainerSpec.Port != 0 || len(r.Spec.Server.ContainerSpec.Env) > 0 // Port or env implies service need
 }
-
-// enum to define supported distribution types in llama-stack.
-type DistributionType string
