@@ -21,8 +21,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// DistributionType defines the distribution configuration for llama-stack.
+type DistributionType struct {
+	// Name is the distribution name that maps to a predefined image in imageMap
+	// +optional
+	Name string `json:"name,omitempty"`
+	// Image is the direct container image reference to use
+	// +optional
+	Image string `json:"image,omitempty"`
+}
 
 // LlamaStackDistributionSpec defines the desired state of LlamaStackDistribution.
 type LlamaStackDistributionSpec struct {
@@ -33,14 +40,14 @@ type LlamaStackDistributionSpec struct {
 
 // ServerSpec defines the desired state of llama server.
 type ServerSpec struct {
-	ContainerSpec ContainerSpec `json:"containerSpec"`
-	PodOverrides  *PodOverrides `json:"podOverrides,omitempty"` // Optional pod-level overrides
+	// +kubebuilder:default:={"name": "ollama"}
+	Distribution  DistributionType `json:"distribution"`
+	ContainerSpec ContainerSpec    `json:"containerSpec"`
+	PodOverrides  *PodOverrides    `json:"podOverrides,omitempty"` // Optional pod-level overrides
 }
 
 // ContainerSpec defines the llama-stack server container configuration.
 type ContainerSpec struct {
-	// +kubebuilder:default:="llamastack/distribution-ollama:latest"
-	Image string `json:"image"`
 	// +kubebuilder:default:="llama-stack"
 	Name      string                      `json:"name,omitempty"` // Optional, defaults to "llama-stack"
 	Port      int32                       `json:"port,omitempty"` // Defaults to 8321 if unset
@@ -54,15 +61,28 @@ type PodOverrides struct {
 	VolumeMounts []corev1.VolumeMount `json:"volumeMounts,omitempty"`
 }
 
+// ProviderInfo represents a single provider from the providers endpoint.
+type ProviderInfo struct {
+	API          string `json:"api"`
+	ProviderID   string `json:"provider_id"`
+	ProviderType string `json:"provider_type"`
+}
+
+// DistributionConfig represents the configuration information from the providers endpoint.
+type DistributionConfig struct {
+	Providers []ProviderInfo `json:"providers,omitempty"`
+}
+
 // LlamaStackDistributionStatus defines the observed state of LlamaStackDistribution.
 type LlamaStackDistributionStatus struct {
-	Image string `json:"image,omitempty"`
-	Ready bool   `json:"ready"`
+	Version            string             `json:"version,omitempty"`
+	DistributionConfig DistributionConfig `json:"distributionConfig,omitempty"`
+	Ready              bool               `json:"ready"`
 }
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
-//+kubebuilder:printcolumn:name="Image",type="string",JSONPath=".status.image"
+//+kubebuilder:printcolumn:name="Version",type="string",JSONPath=".status.version"
 //+kubebuilder:printcolumn:name="Ready",type="boolean",JSONPath=".status.ready"
 // LlamaStackDistribution is the Schema for the llamastackdistributions API
 
@@ -88,6 +108,6 @@ func init() { //nolint:gochecknoinits
 }
 
 // HasPorts checks if the container spec defines a port.
-func (l *LlamaStackDistribution) HasPorts() bool {
-	return l.Spec.Server.ContainerSpec.Port != 0 || len(l.Spec.Server.ContainerSpec.Env) > 0 // Port or env implies service need
+func (r *LlamaStackDistribution) HasPorts() bool {
+	return r.Spec.Server.ContainerSpec.Port != 0 || len(r.Spec.Server.ContainerSpec.Env) > 0 // Port or env implies service need
 }

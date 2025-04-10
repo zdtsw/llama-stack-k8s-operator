@@ -18,14 +18,20 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"time"
 
 	"github.com/go-logr/logr"
 	llamav1alpha1 "github.com/meta-llama/llama-stack-k8s-operator/api/v1alpha1"
 	"github.com/meta-llama/llama-stack-k8s-operator/pkg/deploy"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -42,6 +48,9 @@ const (
 	defaultLabelKey        = "app"
 	defaultLabelValue      = "llama-stack"
 )
+
+// Define a map that translates user-friendly names to actual image references.
+var imageMap = llamav1alpha1.ImageMap
 
 // LlamaStackDistributionReconciler reconciles a LlamaStack object.
 type LlamaStackDistributionReconciler struct {
@@ -64,7 +73,7 @@ func (r *LlamaStackDistributionReconciler) Reconcile(ctx context.Context, req ct
 	// Fetch the LlamaStack instance
 	instance := &llamav1alpha1.LlamaStackDistribution{}
 	if err := r.Get(ctx, req.NamespacedName, instance); err != nil {
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			r.Log.Info("failed to find LlamaStackDistribution resource")
 			return ctrl.Result{}, nil
 		}
@@ -104,7 +113,25 @@ func (r *LlamaStackDistributionReconciler) SetupWithManager(mgr ctrl.Manager) er
 // reconcileDeployment manages the Deployment for the LlamaStack server.
 func (r *LlamaStackDistributionReconciler) reconcileDeployment(ctx context.Context, instance *llamav1alpha1.LlamaStackDistribution) error {
 	logger := log.FromContext(ctx)
-	resolvedImage := instance.Spec.Server.ContainerSpec.Image
+
+	// Validate that only one of name or image is set
+	if instance.Spec.Server.Distribution.Name != "" && instance.Spec.Server.Distribution.Image != "" {
+		return errors.New("only one of distribution.name or distribution.image can be set")
+	}
+
+	// Get the image either from the map or direct reference
+	var resolvedImage string
+	switch {
+	case instance.Spec.Server.Distribution.Name != "":
+		resolvedImage = imageMap[instance.Spec.Server.Distribution.Name]
+		if resolvedImage == "" {
+			return fmt.Errorf("failed to validate distribution name: %s", instance.Spec.Server.Distribution.Name)
+		}
+	case instance.Spec.Server.Distribution.Image != "":
+		resolvedImage = instance.Spec.Server.Distribution.Image
+	default:
+		return errors.New("failed to validate distribution: either distribution.name or distribution.image must be set")
+	}
 
 	// Build the container spec
 	container := corev1.Container{
@@ -157,6 +184,9 @@ func (r *LlamaStackDistributionReconciler) reconcileDeployment(ctx context.Conte
 func (r *LlamaStackDistributionReconciler) reconcileService(ctx context.Context, instance *llamav1alpha1.LlamaStackDistribution) error {
 	// Use the container's port (defaulted to 8321 if unset)
 	port := instance.Spec.Server.ContainerSpec.Port
+	if port == 0 {
+		port = defaultPort
+	}
 
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -179,17 +209,113 @@ func (r *LlamaStackDistributionReconciler) reconcileService(ctx context.Context,
 	return deploy.ApplyService(ctx, r.Client, r.Scheme, instance, service, r.Log)
 }
 
+// getServerURL returns the URL for the LlamaStack server.
+func (r *LlamaStackDistributionReconciler) getServerURL(instance *llamav1alpha1.LlamaStackDistribution, path string) *url.URL {
+	serviceName := fmt.Sprintf("%s-service", instance.Name)
+	port := instance.Spec.Server.ContainerSpec.Port
+	if port == 0 {
+		port = defaultPort
+	}
+
+	return &url.URL{
+		Scheme: "http",
+		Host:   fmt.Sprintf("%s.%s.svc.cluster.local:%d", serviceName, instance.Namespace, port),
+		Path:   path,
+	}
+}
+
+// checkHealth makes an HTTP request to the health endpoint.
+func (r *LlamaStackDistributionReconciler) checkHealth(ctx context.Context, instance *llamav1alpha1.LlamaStackDistribution) (bool, error) {
+	u := r.getServerURL(instance, "/v1/health")
+
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return false, fmt.Errorf("failed to create health check request: %w", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("failed to make health check request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	return resp.StatusCode == http.StatusOK, nil
+}
+
+// getProviderInfo makes an HTTP request to the providers endpoint.
+func (r *LlamaStackDistributionReconciler) getProviderInfo(ctx context.Context, instance *llamav1alpha1.LlamaStackDistribution) ([]llamav1alpha1.ProviderInfo, error) {
+	u := r.getServerURL(instance, "/v1/providers")
+
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create providers request: %w", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make providers request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("providers endpoint returned status code %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read providers response: %w", err)
+	}
+
+	var response struct {
+		Data []llamav1alpha1.ProviderInfo `json:"data"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal providers response: %w", err)
+	}
+
+	return response.Data, nil
+}
+
 // updateStatus refreshes the LlamaStack status.
 func (r *LlamaStackDistributionReconciler) updateStatus(ctx context.Context, instance *llamav1alpha1.LlamaStackDistribution) error {
-	instance.Status.Image = instance.Spec.Server.ContainerSpec.Image
-
 	deployment := &appsv1.Deployment{}
 	err := r.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, deployment)
-	if err != nil && !errors.IsNotFound(err) {
+	if err != nil && !k8serrors.IsNotFound(err) {
 		return fmt.Errorf("failed to fetch deployment for status: %w", err)
 	}
+
+	// Check if deployment is ready
 	expectedReplicas := instance.Spec.Replicas
-	instance.Status.Ready = err == nil && deployment.Status.ReadyReplicas == expectedReplicas
+	deploymentReady := err == nil && deployment.Status.ReadyReplicas == expectedReplicas
+
+	// Only check health and providers if deployment is ready
+	if deploymentReady {
+		// Check health endpoint
+		healthy, err := r.checkHealth(ctx, instance)
+		if err != nil {
+			r.Log.Error(err, "failed to check health endpoint")
+		} else {
+			instance.Status.Ready = healthy
+		}
+
+		// Get provider information
+		providers, err := r.getProviderInfo(ctx, instance)
+		if err != nil {
+			r.Log.Error(err, "failed to get provider information")
+		} else {
+			instance.Status.DistributionConfig.Providers = providers
+		}
+	} else {
+		instance.Status.Ready = false
+	}
 
 	if err := r.Status().Update(ctx, instance); err != nil {
 		return fmt.Errorf("failed to update status: %w", err)

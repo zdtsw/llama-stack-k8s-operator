@@ -104,6 +104,13 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "LlamaStackDistribution")
 		os.Exit(1)
 	}
+
+	// Setup webhooks
+	if err = (&llamaxk8siov1alpha1.LlamaStackDistribution{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "LlamaStackDistribution")
+		os.Exit(1)
+	}
+
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

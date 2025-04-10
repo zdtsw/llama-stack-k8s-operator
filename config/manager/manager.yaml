@@ -39,7 +39,12 @@ spec:
         args:
         - --leader-elect
         image: controller:latest
-        imagePullPolicy: IfNotPresent
+        env:
+          # Env vars are prioritized over --config
+          - name: OLLAMA_IMAGE
+            value: $(OLLAMA_IMAGE)
+          - name: VLLM_IMAGE
+            value: $(VLLM_IMAGE)
         name: manager
         securityContext:
           allowPrivilegeEscalation: false
