@@ -214,11 +214,23 @@ spec:
                         description: Image is the direct container image reference
                           to use
                         type: string
+                        x-kubernetes-validations:
+                        - rule: "!has(self) || !has($.name)"
+                          message: "Only one of name or image can be specified"
                       name:
                         description: Name is the distribution name that maps to a
                           predefined image in imageMap
                         type: string
+                        enum:
+                        - ollama
+                        - vllm
+                        x-kubernetes-validations:
+                        - rule: "!has(self) || !has($.image)"
+                          message: "Only one of name or image can be specified"
                     type: object
+                    x-kubernetes-validations:
+                    - rule: "has(self.name) || has(self.image)"
+                      message: "Either name or image must be specified"
                   podOverrides:
                     description: PodOverrides allows advanced pod-level customization.
                     properties:
@@ -648,7 +660,8 @@ spec:
                                             pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                                             x-kubernetes-int-or-string: true
                                           resource:
-                                            description: 'Required: resource to select'
+                                            description: 'Required: resource
+                                                        to select'
                                             type: string
                                         required:
                                         - resource
