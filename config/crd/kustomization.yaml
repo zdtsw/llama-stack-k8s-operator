@@ -7,28 +7,18 @@ resources:
 
 # [CERTMANAGER] To enable cert-manager, uncomment all sections with 'CERTMANAGER'. 'WEBHOOK' components are required.
 #- ../certmanager
-#- ../webhook
 
 # [CERTMANAGER] To enable cert-manager, uncomment all sections with 'CERTMANAGER'. 'WEBHOOK' components are required.
 # Uncomment 'CERTMANAGER' sections in crd/kustomization.yaml to enable the CA injection in the admission webhooks.
 # 'CERTMANAGER' needs to be enabled to use ca injection
 #- ../certmanager
 
-# [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix including the one in crd/kustomization.yaml
-#- ../webhook
-
-# [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix.
-# Uncomment 'WEBHOOK' sections in crd/kustomization.yaml to enable the webhook for the CRD.
-#- patches/webhook_in_llamastackdistributions.yaml
 
 # [CERTMANAGER] To enable cert-manager, uncomment all sections with 'CERTMANAGER' prefix.
 # Uncomment 'CERTMANAGER' sections to enable the CA injection in the admission webhooks.
 # 'CERTMANAGER' needs to be enabled to use ca injection
 #- patches/cainjection_in_llamastackdistributions.yaml
 
-# [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix.
-# Uncomment 'WEBHOOK' sections to enable the webhook for the CRD.
-#- patches/webhook_in_llamastackdistributions.yaml
 
 # [CERTMANAGER] To enable cert-manager, uncomment all sections with 'CERTMANAGER' prefix.
 # Uncomment 'CERTMANAGER' sections to enable the CA injection in the admission webhooks.
