@@ -362,10 +362,11 @@ func (r *LlamaStackDistributionReconciler) updateStatus(ctx context.Context, ins
 }
 
 // NewLlamaStackDistributionReconciler creates a new reconciler with default image mappings.
-func NewLlamaStackDistributionReconciler(client client.Client, scheme *runtime.Scheme) *LlamaStackDistributionReconciler {
+func NewLlamaStackDistributionReconciler(ctx context.Context, client client.Client, scheme *runtime.Scheme) *LlamaStackDistributionReconciler {
+	log := log.FromContext(ctx).WithName("controller")
 	return &LlamaStackDistributionReconciler{
 		Client: client,
 		Scheme: scheme,
-		Log:    ctrl.Log.WithName("controller"),
+		Log:    log,
 	}
 }
