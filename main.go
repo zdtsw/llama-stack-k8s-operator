@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -62,6 +63,10 @@ func main() {
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
+
+	// root context
+	ctx := ctrl.SetupSignalHandler()
+	ctx = logf.IntoContext(ctx, setupLog)
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
@@ -100,7 +105,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (controllers.NewLlamaStackDistributionReconciler(cli, scheme)).SetupWithManager(mgr); err != nil {
+	if err = (controllers.NewLlamaStackDistributionReconciler(ctx, cli, scheme)).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "LlamaStackDistribution")
 		os.Exit(1)
 	}
@@ -117,7 +122,7 @@ func main() {
 	}
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
