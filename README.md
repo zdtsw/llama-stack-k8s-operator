@@ -25,11 +25,10 @@ This repo hosts a kubernetes operator that is responsible for creating and manag
 
 - Kubernetes cluster (v1.20 or later)
 - Go version **go1.23**
-- operator-sdk version can be updated to **v1.33+** (v4 layout)
+- operator-sdk **v1.39.2** (v4 layout) or newer
 - kubectl configured to access your cluster
 - A running inference server:
   - For local development, you can use the provided script: `/hack/deploy-ollama.sh`
-
 
 #### Build Image
 
