@@ -2,37 +2,49 @@
 
 # Utility functions for deployment scripts
 
-# for the runtime container env variables
+# Convert runtime container env variables
+# e.g: "CUDA_VISIBLE_DEVICES='', VLLM_NO_USAGE_STATS=1, HUGGING_FACE_HUB_TOKEN=secret:hf-token-secret:token"
+# for secret following format: "secret:<name>:<key>"
+#   - name: k8s secret's name
+#   - key: key within the secret
 convert_env_to_yaml() {
-    local env_string="$1"
+    local env_string="${1}"
+    local namespace="${2}"
     local yaml_env=""
-    IFS=',' read -ra env_pairs <<< "$env_string"
+    IFS=',' read -ra env_pairs <<< "${env_string}"
     for pair in "${env_pairs[@]}"; do
-        IFS='=' read -r key value <<< "$pair"
+        IFS='=' read -r key value <<< "${pair}"
         # Strip outer quotes from value
-        value=$(echo "$value" | sed 's/^["'\'']*//;s/["'\'']*$//')
+        value=$(echo "${value}" | sed 's/^["'\'']*//;s/["'\'']*$//')
 
-        # Check if value is a secret reference (format: secret:secretname:key) this is for hf-token-secret to download models
-        if [[ "$value" =~ ^secret:([^:]+):([^:]+)$ ]]; then
+        # check if value is a secret reference which vllm requires to download model from Huggingface.
+        # format: "secret:name:key" (e.g: "secret:hf-token-secret:token")
+        if [[ "${value}" =~ ^secret:([^:]+):([^:]+)$ ]]; then
             local secret_name="${BASH_REMATCH[1]}"
             local secret_key="${BASH_REMATCH[2]}"
-            if [ -n "$yaml_env" ]; then
+
+            # check if the secret exists
+            if ! kubectl get secret "${secret_name}" -n "${namespace}" &>/dev/null; then
+                echo "Error: Secret '${secret_name}' not found in namespace '${namespace}'. Please create it before running script again"
+                exit 1
+            fi
+            if [ -n "${yaml_env}" ]; then
                 yaml_env="${yaml_env}\n"
             fi
             yaml_env="${yaml_env}            - name: ${key}\n              valueFrom:\n                secretKeyRef:\n                  name: ${secret_name}\n                  key: ${secret_key}"
         else
-            if [ -n "$yaml_env" ]; then
+            if [ -n "${yaml_env}" ]; then
                 yaml_env="${yaml_env}\n"
             fi
             yaml_env="${yaml_env}            - name: ${key}\n              value: \"${value}\""
         fi
     done
-    echo -e "$yaml_env"
+    echo -e "${yaml_env}"
 }
 
 # can extend later once we support other providers
 validate_provider() {
-    local provider="$1"
+    local provider="${1}"
     case "${provider}" in
         "ollama"|"vllm")
             return 0
@@ -45,9 +57,9 @@ validate_provider() {
     esac
 }
 
-# set default values for supported provider
+# Set default values for supported provider
 get_provider_config() {
-    local provider="$1"
+    local provider="${1}"
     case "${provider}" in
         "ollama")
             echo "IMAGE=ollama/ollama:latest"
@@ -72,35 +84,35 @@ get_provider_config() {
 
 # Generate namespace name
 get_namespace() {
-    local provider="$1"
+    local provider="${1}"
     echo "${provider}-dist"
 }
 
 # Generate deployment name
 get_server_name() {
-    local provider="$1"
+    local provider="${1}"
     echo "${provider}-server"
 }
 
 # Generate volume mount name
 get_volume_name() {
-    local provider="$1"
+    local provider="${1}"
     echo "${provider}-data"
 }
 
 # Generate security related YAML and SCC based on provider
 generate_security_context() {
-    local provider="$1"
-    local namespace="$2"
+    local provider="${1}"
+    local namespace="${2}"
     local service_account="${provider}-sa"
 
     # OpenShift requires specific permissions in order for the container to run as uid 0
     if [ "${provider}" = "ollama" ]; then
         # Create ServiceAccount for Ollama (needed for SCC)
         echo "Checking if ServiceAccount ${service_account} exists..."
-        if ! kubectl get sa ${service_account} -n ${namespace} &> /dev/null; then
+        if ! kubectl get sa "${service_account}" -n "${namespace}" &> /dev/null; then
             echo "Creating ServiceAccount ${service_account}..."
-            kubectl create sa ${service_account} -n ${namespace}
+            kubectl create sa "${service_account}" -n "${namespace}"
         else
             echo "ServiceAccount ${service_account} already exists"
         fi
@@ -137,4 +149,46 @@ generate_security_context() {
     export CONTAINER_SECURITY_CONTEXT_YAML
     export OPENSHIFT_ANNOTATION
 
+}
+
+# Load provider-specific configuration and set up environment
+load_provider_config() {
+    local provider="${1}"
+    local model="${2}"
+    local env_vars="${3}"
+
+    # Validate provider
+    if ! validate_provider "${provider}"; then
+        exit 1
+    fi
+
+    # Load provider configuration
+    while IFS='=' read -r key value; do
+        if [[ -n "${key}" && ! "${key}" =~ ^# ]]; then
+            eval "${key}=\"${value}\""
+        fi
+    done < <(get_provider_config "${provider}")
+
+    # Use provided model or default
+    if [ -z "${model}" ]; then
+        export MODEL="${DEFAULT_MODEL}"
+    else
+        export MODEL="${model}"
+    fi
+
+    # Set default args after MODEL is determined, 15s is to ensure model has been downloaded
+    if [ "${provider}" = "ollama" ]; then
+        export INIT_ARGS="ollama serve & sleep 15 && ollama pull ${MODEL}"
+        export DEFAULT_ARGS="ollama serve"
+    else
+        export DEFAULT_ARGS="vllm serve --dtype auto --model ${MODEL}"
+        export INIT_ARGS="sleep 1"  # here only to pull down the same image in initContainer
+    fi
+
+    # Use provided env vars or default ones
+    if [ -z "${env_vars}" ]; then
+        export ENV_VARS="${DEFAULT_ENV_VARS}"
+    else
+        export ENV_VARS="${env_vars}"
+    fi
 }

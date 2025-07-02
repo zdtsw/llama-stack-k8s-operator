@@ -74,4 +74,4 @@ EOF
 fi
 
 echo "Annotating ServiceAccount to clarify that it uses ${SCC_NAME}..."
-kubectl annotate sa ${SERVICE_ACCOUNT} -n ${NAMESPACE} openshift.io/scc=${SCC_NAME} --overwrite
+kubectl annotate sa "${SERVICE_ACCOUNT}" -n "${NAMESPACE}" "openshift.io/scc=${SCC_NAME}" --overwrite

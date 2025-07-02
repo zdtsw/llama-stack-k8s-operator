@@ -51,41 +51,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Load provider-specific configuration
-load_provider_config() {
-    # Validate provider
-    if ! validate_provider "${PROVIDER}"; then
-        exit 1
-    fi
-
-    # Load provider configuration
-    while IFS='=' read -r key value; do
-        if [[ -n "$key" && ! "$key" =~ ^# ]]; then
-            eval "$key=\"$value\""
-        fi
-    done < <(get_provider_config "${PROVIDER}")
-
-    # Use overwritten default if provided from flag
-    if [ -z "${MODEL}" ]; then
-        MODEL="${DEFAULT_MODEL}"
-    fi
-
-    # Set default args after MODEL is determined, 15s is to ensure model has been downloaded
-    if [ "${PROVIDER}" = "ollama" ]; then
-        INIT_ARGS="ollama serve & sleep 15 && ollama pull ${MODEL}"
-        DEFAULT_ARGS="ollama serve"
-    else
-        DEFAULT_ARGS="vllm serve --dtype auto --model ${MODEL}"
-        INIT_ARGS="sleep 1"  # here only to pull down the same image
-    fi
-
-    # Use provided env vars or default ones
-    if [ -z "${ENV_VARS}" ]; then
-        ENV_VARS="${DEFAULT_ENV_VARS}"
-    fi
-}
-
-load_provider_config
+load_provider_config "${PROVIDER}" "${MODEL}" "${ENV_VARS}"
 
 NAMESPACE=$(get_namespace "${PROVIDER}")
 SERVER_NAME=$(get_server_name "${PROVIDER}")
@@ -98,21 +64,20 @@ else
     DEPLOYMENT_ARGS="${ARGS}"
 fi
 
-ENV_YAML=$(convert_env_to_yaml "${ENV_VARS}")
+echo "Checking if namespace ${NAMESPACE} exists..."
+if ! kubectl get namespace "${NAMESPACE}" &> /dev/null; then
+    echo "Creating namespace ${NAMESPACE}..."
+    kubectl create namespace "${NAMESPACE}"
+else
+    echo "Namespace ${NAMESPACE} already exists"
+fi
+ENV_YAML=$(convert_env_to_yaml "${ENV_VARS}" "${NAMESPACE}")
 
-echo "Deploying ${PROVIDER} as provider with configuration:"
+echo "Start deploying ${PROVIDER} as provider with configuration:"
 echo "  ServingRuntime Image: ${IMAGE}"
 echo "  Inference Server: ${INFERENCE_SERVER}"
 echo "  Model: ${MODEL}"
 echo ""
-
-echo "Checking if namespace ${NAMESPACE} exists..."
-if ! kubectl get namespace ${NAMESPACE} &> /dev/null; then
-    echo "Creating namespace ${NAMESPACE}..."
-    kubectl create namespace ${NAMESPACE}
-else
-    echo "Namespace ${NAMESPACE} already exists"
-fi
 
 # Generate SCC related config if needed based on provider
 generate_security_context "${PROVIDER}" "${NAMESPACE}"
@@ -192,8 +157,8 @@ spec:
   type: ClusterIP
 EOF
 
-echo "This may take a few minutes for the image to be pulled and container to start..."
-if ! kubectl rollout status deployment/${SERVER_NAME} -n ${NAMESPACE} --timeout=300s; then
+echo "This may take up to 5 minutes for the image to be pulled and container to start..."
+if ! kubectl rollout status "deployment/${SERVER_NAME}" -n "${NAMESPACE}" --timeout=300s; then
     echo "Error: Deployment failed to become ready within 5 minutes"
     exit 1
 fi
